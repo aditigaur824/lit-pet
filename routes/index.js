@@ -42,7 +42,7 @@ router.post('/callback', function(req, res, next) {
 
     routeMessage(message, conversationId);
   } else if (requestBody.suggestionResponse !== undefined) {
-    let message = requestBody.suggestionResponse.text;
+    let message = requestBody.suggestionResponse.postbackData;
 
     routeMessage(message, conversationId);
   }
@@ -63,16 +63,36 @@ async function routeMessage(message, conversationId) {
 
   // check for start message
   if (normalizedMessage === COMMAND_START) {
-    const user = await firebaseHandler.getUser();
+    const user = await firebaseHandler.getUser(conversationId);
+    // console.log('user', user);
     if (!user) {
       sendUserSelection(conversationId);
       sendCarousel(conversationId);
     } else {
-      console.log(`You have already adopted a ${user.petType}`);
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `You have already adopted a ${user.petType}!`,
+      }, conversationId);
     }
   } else if (normalizedMessage.split(' ')[0] === COMMAND_CHOOSE_PET) {
-    setUserPet(normalizedMessage, conversationId);
+    const user = await firebaseHandler.getUser(conversationId);
+    // check if user is choosing a pet
+    if (!user) {
+      setUserPet(normalizedMessage, conversationId);
+    } else {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `You have already adopted a ${user.petType}!`,
+      }, conversationId);
+    }
   } else {
+    // send error message
     sendResponse({
       messageId: uuid.v4(),
       representative: {
@@ -91,7 +111,9 @@ async function routeMessage(message, conversationId) {
  * @param  {string} conversationId The conversation ID
  */
 async function setUserPet(normalizedMessage, conversationId) {
+  // extract pet type from 'choosepet {pet type}'
   let petType = normalizedMessage.split(' ')[1];
+  // save in firebase + send response
   await firebaseHandler.setPetType(petType, conversationId);
   sendResponse({
     messageId: uuid.v4(),
@@ -103,7 +125,7 @@ async function setUserPet(normalizedMessage, conversationId) {
 }
 
 /**
- * Sends a sample carousel rich card to the user.
+ * Sends a pets rich card to the user.
  *
  * @param {string} conversationId The unique id for this user and agent.
  */
@@ -124,7 +146,7 @@ function sendCarousel(conversationId) {
 }
 
 /**
- * Creates a sample carousel rich card.
+ * Creates a pet carousel
  *
  * @return {object} A carousel rich card.
  */
@@ -137,7 +159,7 @@ function getPetCarousel() {
       let pet = pets[petKey];
       cardContents.push({
         title: pet.name,
-        description: `Adopt ${pet.name}!`,
+        description: `Adopt a ${pet.name}!`,
         suggestions: {
           'reply': {
             'text': `Choose ${pet.name}`,
@@ -203,7 +225,7 @@ function sendResponse(messageObject, conversationId) {
     // Send the typing started event
     apiObject.bmApi.conversations.events.create(apiEventParams, {},
       (err, response) => {
-      console.error(err);
+      // console.error(err);
       // console.log(response);
 
       let apiParams = {
@@ -216,7 +238,7 @@ function sendResponse(messageObject, conversationId) {
       // Business Messages client library
       apiObject.bmApi.conversations.messages.create(apiParams, {},
         (err, response) => {
-        console.log(err);
+        // console.log(err);
         // console.log(response);
 
         // Update the event parameters
@@ -226,13 +248,13 @@ function sendResponse(messageObject, conversationId) {
         // Send the typing stopped event
         apiObject.bmApi.conversations.events.create(apiEventParams, {},
           (err, response) => {
-          console.log(err);
+          // console.log(err);
           // console.log(response);
         });
       });
     });
   }).catch(function(err) {
-    console.log(err);
+    // console.log(err);
   });
 }
 
