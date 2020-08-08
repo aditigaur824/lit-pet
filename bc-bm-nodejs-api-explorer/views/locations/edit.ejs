@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>
+      <%= title %>
+    </title>
+    <%- include('../header.ejs'); %>
+  </head>
+  <body>
+    <div class="container">
+      <h1><%= title %></h1>
+      <div class="row">
+        <div class="col-6">
+          <% if (message) { %>
+            <div class="alert alert-danger" role="alert">
+              <%= message %>
+            </div>
+          <% } %>
+
+          <form action="<%= formUrl %>" method="post">
+            <div class="form-group">
+              <label>Place ID</label>
+              <input class="form-control" <%= isEdit ? 'readonly' : '' %> required value="<%= location.placeId; %>" type="text" name="placeId">
+            </div>
+            <div class="form-group">
+              <label>Agent</label>
+              <select class="form-control" name="agent">
+                <% for(var i = 0; i < agents.length; i++) { %>
+                  <option <%= location.agent == agents[i].name ? 'selected' : '' %> value="<%= agents[i].name; %>"><%= agents[i].displayName; %></option>
+                <% } %>
+              </select>
+            </div>
+
+            <p class="font-weight-bold">Conversation settings:</p>
+            <div class="form-group">
+              <label>Locale</label>
+              <select class="form-control" name="locale">
+                <option value="en">English</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Welcome message</label>
+              <textarea class="form-control" placeholder="" name="welcomeMessage"><%= location.conversationalSettings.en.welcomeMessage.text; %></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Offline message</label>
+              <textarea class="form-control" placeholder="" name="offlineMessage"><%= location.conversationalSettings.en.offlineMessage.text; %></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Privacy policy</label>
+              <input class="form-control" placeholder="http://" value="<%= location.conversationalSettings.en.privacyPolicy.url; %>" type="text" name="privacyPolicy">
+            </div>
+
+            <div class="form-group">
+              <p class="font-weight-bold">Conversational starters: </p>
+              <div>
+                <%
+                  var starters = [];
+                  var default_suggestion = { suggestion: { reply: { text: '', postbackData: '' } } };
+                  if(location.conversationalSettings.en.conversationStarters != undefined) { 
+                    starters = location.conversationalSettings.en.conversationStarters;
+                  }
+                %>
+                <% for(var i = 0; i < 5; i++) { %>
+                    <%- include('../components/conversational_starter.ejs', {
+                      controlName: 'conversationalStarter', starter: i < starters.length ? starters[i] : default_suggestion }); %>
+                  <% } %>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Entry Points:</label>
+              <% for(var i = 0; i < location.locationEntryPointConfigs.length; i++) { %>
+                <% if(!isEdit) { %>
+                <select class="form-control mb-2" name="allowedEntryPoint[]">
+                  <% for(var j = 0; j < allowedEntryPoints.length; j++) { %>
+                    <option <%= location.locationEntryPointConfigs[i].allowedEntryPoint == allowedEntryPoints[j] ? 'selected' : '' %> value="<%= allowedEntryPoints[j]; %>"><%= allowedEntryPoints[j]; %></option>
+                  <% } %>
+                </select>
+                <% } else { %>
+                  <input class="form-control mb-2" readonly required value="<%= location.locationEntryPointConfigs[i].allowedEntryPoint; %>" type="text" name="allowedEntryPoint[]">
+                <% } %>
+              <% } %>
+            </div>
+
+            <% if(isEdit) { %>
+              <p class="font-weight-bold">Test settings:</p>
+              <% if(location.testUrls != undefined) { 
+                let testUrls = location.testUrls;
+        
+                for(var i = 0; i < testUrls.length; i++) { %>
+                  <div class="form-group">
+                    <label><%= testUrls[i].surface %></label>
+                    <input class="form-control" readonly value="<%= testUrls[i].url %>" type="text" name="">
+                  </div>
+                <% } %>
+              <% } %>
+            <% } %>
+
+            <button type="submit" class="btn btn-primary">Submit</button>
+          </form>
+
+          <p class="mt-3"><a href="/locations?brandId=<%= brandId %>">← Back to locations</a></p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
