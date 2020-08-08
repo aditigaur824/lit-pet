@@ -12,15 +12,64 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+const path = require('path');
 const express = require('express');
 const router = express.Router();
 const uuid = require('uuid');
 const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
+const { createCanvas, loadImage } = require('canvas');
 
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
+
+/**
+ * Image generator public endpoint
+ */
+router.get('/image.png', function(req, res, next) {
+  const width = 708;
+  const height = 512;
+    
+  // Extract Parameters
+  const roomArg = req.query.room || "datacenter";
+  const speciesArg = req.query.species || "pokpok";
+  const colorArg = req.query.color || "blue";
+  const stateArg = req.query.state || "normal";
+  const poopArg = req.query.poop || false;
+
+  const canvas = createCanvas(width, height);
+  const context = canvas.getContext('2d');
+  (async () => {
+    try {
+      // Draw Room
+      const room = await loadImage(path.join(__dirname, '../assets/rooms/' + roomArg + '.jpg'));
+      context.drawImage(room, 0, 0);
+        
+      // Draw Poop
+      if(poopArg) {
+        const poop = await loadImage(path.join(__dirname, '../assets/poop.png'));
+        const left = canvas.width / 2 - poop.width / 2 - 75;
+        const top = canvas.height - poop.height - 5;
+        context.drawImage(poop, left, top);
+      }
+      
+      // Draw Pet
+      const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
+      const left = canvas.width / 2 - pet.width / 2;
+      const top = canvas.height - pet.height - 5;
+      context.drawImage(pet, left, top);
+      
+      // Set MIME and pipe to response
+      res.setHeader('Content-Type', 'image/png');
+      canvas.createPNGStream().pipe(res);
+    } catch (err) {
+      res.status(404).send({
+        message: err
+      });
+    }
+  })();
+});
 
 /**
  * The webhook callback method.
