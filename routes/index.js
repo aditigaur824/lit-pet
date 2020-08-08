@@ -14,22 +14,13 @@
 
 const express = require('express');
 const router = express.Router();
-const uuidv4 = require('uuid/v4');
+const uuid = require('uuid');
+const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
+const pets = require('../resources/pets.json');
 
-// Set of commands the bot understands
-const CMD_RICH_CARD = 'card';
-const CMD_CAROUSEL_CARD = 'carousel';
-const CMD_SUGGESTIONS = 'chips';
-
-// Images used in cards and carousel examples
-const SAMPLE_IMAGES = [
-  'https://storage.googleapis.com/kitchen-sink-sample-images/cute-dog.jpg',
-  'https://storage.googleapis.com/kitchen-sink-sample-images/elephant.jpg',
-  'https://storage.googleapis.com/kitchen-sink-sample-images/adventure-cliff.jpg',
-  'https://storage.googleapis.com/kitchen-sink-sample-images/sheep.jpg',
-  'https://storage.googleapis.com/kitchen-sink-sample-images/golden-gate-bridge.jpg',
-];
+const COMMAND_START = 'start';
+const COMMAND_CHOOSE_PET = 'choosepet';
 
 /**
  * The webhook callback method.
@@ -38,8 +29,8 @@ router.post('/callback', function(req, res, next) {
   let requestBody = req.body;
 
   // Log the full JSON payload received
-  console.log('requestBody: ' + JSON.stringify(requestBody));
-  console.log('requestHeader: ' + JSON.stringify(req.headers));
+  // console.log('requestBody: ' + JSON.stringify(requestBody));
+  // console.log('requestHeader: ' + JSON.stringify(req.headers));
 
   // Extract the message payload parameters
   let conversationId = requestBody.conversationId;
@@ -49,25 +40,11 @@ router.post('/callback', function(req, res, next) {
     && requestBody.message.text !== undefined) {
     let message = requestBody.message.text;
 
-    // Log message parameters
-    console.log('conversationId: ' + conversationId);
-    console.log('message: ' + message);
-
     routeMessage(message, conversationId);
   } else if (requestBody.suggestionResponse !== undefined) {
-    let message = requestBody.suggestionResponse.text;
-
-    // Log message parameters
-    console.log('conversationId: ' + conversationId);
-    console.log('message: ' + message);
+    let message = requestBody.suggestionResponse.postbackData;
 
     routeMessage(message, conversationId);
-  } else if (requestBody.userStatus !== undefined) {
-    if (requestBody.userStatus.isTyping !== undefined) {
-      console.log('User is typing');
-    } else if (requestBody.userStatus.requestedLiveAgent !== undefined) {
-      console.log('User requested transfer to live agent');
-    }
   }
 
   res.sendStatus(200);
@@ -79,75 +56,85 @@ router.post('/callback', function(req, res, next) {
  * @param {string} message The message text received from the user.
  * @param {string} conversationId The unique id for this user and agent.
  */
-function routeMessage(message, conversationId) {
+async function routeMessage(message, conversationId) {
   let normalizedMessage = message.trim().toLowerCase();
 
   console.log('normalizedMessage: ' + normalizedMessage);
 
-  if (normalizedMessage === CMD_RICH_CARD) {
-    sendRichCard(conversationId);
-  } else if (normalizedMessage === CMD_CAROUSEL_CARD) {
-    sendCarousel(conversationId);
-  } else if (normalizedMessage === CMD_SUGGESTIONS) {
-    sendMessageWithSuggestions(conversationId);
-  } else {
-    echoMessage(message, conversationId);
-  }
-}
-
-/**
- * Sends a sample rich card to the user.
- *
- * @param {string} conversationId The unique id for this user and agent.
- */
-function sendRichCard(conversationId) {
-  let fallbackText = 'Business Messages!!!\n\n'
-    + 'This is an example rich card\n\n' + SAMPLE_IMAGES[0];
-
-  sendResponse({
-        messageId: uuidv4(),
+  // check for start message
+  if (normalizedMessage === COMMAND_START) {
+    const user = await firebaseHandler.getUser(conversationId);
+    // console.log('user', user);
+    if (!user) {
+      sendUserSelection(conversationId);
+      sendCarousel(conversationId);
+    } else {
+      sendResponse({
+        messageId: uuid.v4(),
         representative: {
           representativeType: 'BOT',
         },
-        fallback: fallbackText,
-        richCard: {
-          standaloneCard: {
-            cardContent: {
-              title: 'Business Messages!!!',
-              description: 'This is an example rich card',
-              media: {
-                height: 'MEDIUM',
-                contentInfo: {
-                  fileUrl: SAMPLE_IMAGES[0],
-                  forceRefresh: false,
-                },
-              },
-              suggestions: getSampleSuggestions(),
-            },
-          },
-        },
+        text: `You have already adopted a ${user.petType}!`,
       }, conversationId);
+    }
+  } else if (normalizedMessage.split(' ')[0] === COMMAND_CHOOSE_PET) {
+    const user = await firebaseHandler.getUser(conversationId);
+    // check if user is choosing a pet
+    if (!user) {
+      setUserPet(normalizedMessage, conversationId);
+    } else {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `You have already adopted a ${user.petType}!`,
+      }, conversationId);
+    }
+  } else {
+    // send error message
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      text: `Command not recognized. Please try again.`,
+    }, conversationId);
+  }
+}
+
+
+/**
+ * setUserPet - Set the pet of a user
+ *
+ * @param  {string} normalizedMessage The message
+ * @param  {string} conversationId The conversation ID
+ */
+async function setUserPet(normalizedMessage, conversationId) {
+  // extract pet type from 'choosepet {pet type}'
+  let petType = normalizedMessage.split(' ')[1];
+  // save in firebase + send response
+  await firebaseHandler.setPetType(petType, conversationId);
+  sendResponse({
+    messageId: uuid.v4(),
+    representative: {
+      representativeType: 'BOT',
+    },
+    text: `You have succesfully adopted a ${petType}!`,
+  }, conversationId);
 }
 
 /**
- * Sends a sample carousel rich card to the user.
+ * Sends a pets rich card to the user.
  *
  * @param {string} conversationId The unique id for this user and agent.
  */
 function sendCarousel(conversationId) {
-  let carouselCard = getSampleCarousel();
-  let fallbackText = '';
-
-  // Construct a fallback text for devices that do not support carousels
-  for (let i = 0; i < carouselCard.cardContents.length; i++) {
-    fallbackText += carouselCard.cardContents[i].title + '\n\n'
-      + carouselCard.cardContents[i].description + '\n\n'
-      + carouselCard.cardContents[i].media.contentInfo.fileUrl + '\n\n'
-      + '\n---------------------------------------------\n\n';
-  }
+  let carouselCard = getPetCarousel();
+  let fallbackText = 'Pet List';
 
   sendResponse({
-        messageId: uuidv4(),
+        messageId: uuid.v4(),
         fallback: fallbackText,
         representative: {
           representativeType: 'BOT',
@@ -159,29 +146,36 @@ function sendCarousel(conversationId) {
 }
 
 /**
- * Creates a sample carousel rich card.
+ * Creates a pet carousel
  *
  * @return {object} A carousel rich card.
  */
-function getSampleCarousel() {
+function getPetCarousel() {
   let cardContents = [];
 
   // Create individual cards for the carousel
-  for (let i = 0; i < SAMPLE_IMAGES.length; i++) {
-    cardContents.push({
-      title: 'Card #' + (i + 1),
-      description: 'This is a sample card',
-      suggestions: getSampleSuggestions(),
-      media: {
-        height: 'MEDIUM',
-        contentInfo: {
-          fileUrl: SAMPLE_IMAGES[i],
-          forceRefresh: false,
+  for (let petKey in pets) {
+    if (pets.hasOwnProperty(petKey)) {
+      let pet = pets[petKey];
+      cardContents.push({
+        title: pet.name,
+        description: `Adopt a ${pet.name}!`,
+        suggestions: {
+          'reply': {
+            'text': `Choose ${pet.name}`,
+            'postbackData': `${COMMAND_CHOOSE_PET} ${petKey}`,
+          },
         },
-      },
-    });
+        media: {
+          height: 'MEDIUM',
+          contentInfo: {
+            fileUrl: pet.image,
+            forceRefresh: false,
+          },
+        },
+      });
+    }
   }
-
   return {
     cardWidth: 'MEDIUM',
     cardContents: cardContents,
@@ -189,36 +183,19 @@ function getSampleCarousel() {
 }
 
 /**
- * Sends a message with a suggested replies.
+ * sendUserSelection - send the starter screen for choosing pets
  *
- * @param {string} conversationId The unique id for this user and agent.
+ * @param  {type} conversationId The conversation ID
  */
-function sendMessageWithSuggestions(conversationId) {
-  sendResponse({
-        messageId: uuidv4(),
-        representative: {
-          representativeType: 'BOT',
-        },
-        fallback: 'Your device does not support suggestions',
-        suggestions: getSampleSuggestions(),
-        text: 'Message with suggestions',
-      }, conversationId);
-}
-
-/**
- * Sends the message received from the user back to the user.
- *
- * @param {string} message The message text received from the user.
- * @param {string} conversationId The unique id for this user and agent.
- */
-function echoMessage(message, conversationId) {
-  sendResponse({
-        messageId: uuidv4(),
-        representative: {
-          representativeType: 'BOT',
-        },
-        text: message,
-      }, conversationId);
+function sendUserSelection(conversationId) {
+  let messageObject = {
+    messageId: uuid.v4(),
+    representative: {
+      representativeType: 'BOT',
+    },
+    text: 'It looks like you haven\'t registered before! Please choose a pet :)',
+  };
+  sendResponse(messageObject, conversationId);
 }
 
 /**
@@ -242,14 +219,14 @@ function sendResponse(messageObject, conversationId) {
           representativeType: 'BOT',
         },
       },
-      eventId: uuidv4(),
+      eventId: uuid.v4(),
     };
 
     // Send the typing started event
     apiObject.bmApi.conversations.events.create(apiEventParams, {},
       (err, response) => {
-      console.log(err);
-      console.log(response);
+      // console.error(err);
+      // console.log(response);
 
       let apiParams = {
         auth: apiObject.authClient,
@@ -261,59 +238,24 @@ function sendResponse(messageObject, conversationId) {
       // Business Messages client library
       apiObject.bmApi.conversations.messages.create(apiParams, {},
         (err, response) => {
-        console.log(err);
-        console.log(response);
+        // console.log(err);
+        // console.log(response);
 
         // Update the event parameters
         apiEventParams.resource.eventType = 'TYPING_STOPPED';
-        apiEventParams.eventId = uuidv4();
+        apiEventParams.eventId = uuid.v4();
 
         // Send the typing stopped event
         apiObject.bmApi.conversations.events.create(apiEventParams, {},
           (err, response) => {
-          console.log(err);
-          console.log(response);
+          // console.log(err);
+          // console.log(response);
         });
       });
     });
   }).catch(function(err) {
-    console.log(err);
+    // console.log(err);
   });
-}
-
-/**
- * Creates a list of sample suggestions that includes a
- * suggested reply and two actions.
- *
- * @return {array} An array of sample suggested replies.
- */
-function getSampleSuggestions() {
-  return [
-      {
-        reply: {
-          text: 'Sample Chip',
-          postbackData: 'sample_chip',
-        },
-      },
-      {
-        action: {
-          text: 'URL Action',
-          postbackData: 'url_action',
-          openUrlAction: {
-            url: 'https://www.google.com',
-          },
-        },
-      },
-      {
-        action: {
-          text: 'Dial Action',
-          postbackData: 'dial_action',
-          dialAction: {
-            phoneNumber: '+12223334444',
-          },
-        },
-      },
-    ];
 }
 
 module.exports = router;
