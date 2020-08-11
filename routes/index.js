@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const os = require('os');
 const path = require('path');
 const express = require('express');
 const router = express.Router();
