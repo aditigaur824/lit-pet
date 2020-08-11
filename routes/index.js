@@ -19,10 +19,14 @@ const uuid = require('uuid');
 const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
-const { createCanvas, loadImage } = require('canvas');
+const {createCanvas, loadImage} = require('canvas');
 
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
+const COMMAND_FEED_PET = 'feed';
+const COMMAND_PLAY_WITH_PET = 'play';
+const COMMAND_CLEAN_PET = 'clean';
+const COMMAND_HELP = 'help';
 
 /**
  * Image generator public endpoint
@@ -30,12 +34,12 @@ const COMMAND_CHOOSE_PET = 'choosepet';
 router.get('/image.png', function(req, res, next) {
   const width = 708;
   const height = 512;
-    
+
   // Extract Parameters
-  const roomArg = req.query.room || "datacenter";
-  const speciesArg = req.query.species || "pokpok";
-  const colorArg = req.query.color || "blue";
-  const stateArg = req.query.state || "normal";
+  const roomArg = req.query.room || 'datacenter';
+  const speciesArg = req.query.species || 'pokpok';
+  const colorArg = req.query.color || 'blue';
+  const stateArg = req.query.state || 'normal';
   const poopArg = req.query.poop || false;
 
   const canvas = createCanvas(width, height);
@@ -45,27 +49,27 @@ router.get('/image.png', function(req, res, next) {
       // Draw Room
       const room = await loadImage(path.join(__dirname, '../assets/rooms/' + roomArg + '.jpg'));
       context.drawImage(room, 0, 0);
-        
+
       // Draw Poop
-      if(poopArg) {
+      if (poopArg) {
         const poop = await loadImage(path.join(__dirname, '../assets/poop.png'));
         const left = canvas.width / 2 - poop.width / 2 - 75;
         const top = canvas.height - poop.height - 5;
         context.drawImage(poop, left, top);
       }
-      
+
       // Draw Pet
       const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
       const left = canvas.width / 2 - pet.width / 2;
       const top = canvas.height - pet.height - 5;
       context.drawImage(pet, left, top);
-      
+
       // Set MIME and pipe to response
       res.setHeader('Content-Type', 'image/png');
       canvas.createPNGStream().pipe(res);
     } catch (err) {
       res.status(404).send({
-        message: err
+        message: err,
       });
     }
   })();
@@ -109,9 +113,11 @@ async function routeMessage(message, conversationId) {
   let normalizedMessage = message.trim().toLowerCase();
 
   console.log('normalizedMessage: ' + normalizedMessage);
+  const words = normalizedMessage.split(' ');
+  const command = words[0];
 
   // check for start message
-  if (normalizedMessage === COMMAND_START) {
+  if (command === COMMAND_START) {
     const user = await firebaseHandler.getUser(conversationId);
     // console.log('user', user);
     if (!user) {
@@ -126,7 +132,7 @@ async function routeMessage(message, conversationId) {
         text: `You have already adopted a ${user.petType}!`,
       }, conversationId);
     }
-  } else if (normalizedMessage.split(' ')[0] === COMMAND_CHOOSE_PET) {
+  } else if (command === COMMAND_CHOOSE_PET) {
     const user = await firebaseHandler.getUser(conversationId);
     // check if user is choosing a pet
     if (!user) {
@@ -140,6 +146,23 @@ async function routeMessage(message, conversationId) {
         text: `You have already adopted a ${user.petType}!`,
       }, conversationId);
     }
+  } else if (command === COMMAND_FEED_PET) {
+    const food = words[1];
+    feedPet(food, conversationId);
+  } else if (command === COMMAND_PLAY_WITH_PET) {
+    const game = words[1];
+    playWithPet(game, conversationId);
+  } else if (command === COMMAND_CLEAN_PET) {
+    cleanPet(conversationId);
+  } else if (command === COMMAND_HELP) {
+    // send error message
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      text: 'List of commands:\nfeed <food>\nplay <game>\nclean',
+    }, conversationId);
   } else {
     // send error message
     sendResponse({
@@ -147,9 +170,59 @@ async function routeMessage(message, conversationId) {
       representative: {
         representativeType: 'BOT',
       },
-      text: `Command not recognized. Please try again.`,
+      text: 'Command not recognized. Type help for a list of available commands.',
     }, conversationId);
   }
+}
+
+
+/**
+ * feedPet - Feed pet
+ *
+ * @param  {string} food           The type of food
+ * @param  {string} conversationId The conversation ID
+ */
+async function feedPet(food, conversationId) {
+  // TODO: Implement feed pet
+  sendResponse({
+    messageId: uuid.v4(),
+    representative: {
+      representativeType: 'BOT',
+    },
+    text: 'Feed pet not implemented yet',
+  }, conversationId);
+}
+
+/**
+ * playWithPet - Play game with pet
+ * @param  {string} game The game type
+ * @param  {string} conversationId The conversation ID
+ */
+async function playWithPet(game, conversationId) {
+  // TODO: Implement game
+  sendResponse({
+    messageId: uuid.v4(),
+    representative: {
+      representativeType: 'BOT',
+    },
+    text: 'Play with pet not implemented yet',
+  }, conversationId);
+}
+
+
+/**
+ * cleanPet - Clean pet
+ * @param  {type} conversationId The conversation ID
+ */
+async function cleanPet(conversationId) {
+  // TODO: Implement clean
+  sendResponse({
+    messageId: uuid.v4(),
+    representative: {
+      representativeType: 'BOT',
+    },
+    text: 'Clean pet not implemented yet',
+  }, conversationId);
 }
 
 
