@@ -24,6 +24,7 @@ const {createCanvas, loadImage} = require('canvas');
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
 const COMMAND_FEED_PET = 'feed';
+const COMMAND_FOOD_ITEM = 'food-';
 const COMMAND_PLAY_WITH_PET = 'play';
 const COMMAND_CLEAN_PET = 'clean';
 const COMMAND_HELP = 'help';
@@ -147,8 +148,7 @@ async function routeMessage(message, conversationId) {
       }, conversationId);
     }
   } else if (command === COMMAND_FEED_PET) {
-    const food = words[1];
-    feedPet(food, conversationId);
+    feedPet(conversationId);
   } else if (command === COMMAND_PLAY_WITH_PET) {
     const game = words[1];
     playWithPet(game, conversationId);
@@ -178,18 +178,16 @@ async function routeMessage(message, conversationId) {
 
 /**
  * feedPet - Feed pet
- *
- * @param  {string} food           The type of food
  * @param  {string} conversationId The conversation ID
  */
-async function feedPet(food, conversationId) {
-  // TODO: Implement feed pet
+async function feedPet(conversationId) {
   sendResponse({
     messageId: uuid.v4(),
     representative: {
       representativeType: 'BOT',
     },
-    text: 'Feed pet not implemented yet',
+    suggestions: getFoodSuggestions(),
+    text: 'Choose one of the foods below to feed your pet!',
   }, conversationId);
 }
 
@@ -242,6 +240,7 @@ async function setUserPet(normalizedMessage, conversationId) {
     representative: {
       representativeType: 'BOT',
     },
+    suggestions: getDefaultSuggestions(),
     text: `You have succesfully adopted a ${petType}!`,
   }, conversationId);
 }
@@ -265,6 +264,52 @@ function sendCarousel(conversationId) {
           carouselCard: carouselCard,
         },
       }, conversationId);
+}
+
+function getDefaultSuggestions() {
+  return [
+    {
+      reply: {
+        text: 'Feed Your Pet!',
+        postbackData: COMMAND_FEED_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Clean Your Pet!',
+        postbackData: COMMAND_CLEAN_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Play With Your Pet!',
+        postbackData: COMMAND_PLAY_WITH_PET,
+      },
+    },
+  ];
+}
+
+function getFoodSuggestions() {
+  return [
+    {
+      reply: {
+        text: 'U+1F951',
+        postbackData: COMMAND_FOOD_ITEM+'avocado',
+      },
+    },
+    {
+      reply: {
+        text: '	U+1F355',
+        postbackData: COMMAND_FOOD_ITEM+'pizza',
+      },
+    },
+    {
+      reply: {
+        text: '	U+1F363',
+        postbackData: COMMAND_FOOD_ITEM+'sushi',
+      },
+    },
+  ];
 }
 
 /**
