@@ -16,6 +16,7 @@ const path = require('path');
 const express = require('express');
 const router = express.Router();
 const uuid = require('uuid');
+const schedule = require('node-schedule');
 const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
@@ -424,5 +425,33 @@ function sendResponse(messageObject, conversationId) {
     // console.log(err);
   });
 }
+
+
+/**
+ * setupScheduler - Set schedulers to deplete H+H+H
+ */
+async function setupScheduler() {
+  schedule.scheduleJob('30 * * * * *', async () => {
+    let users = await firebaseHandler.getUserList();
+    for (let conversationId in users) {
+      if (users.hasOwnProperty(conversationId)) {
+        if (users[conversationId].hunger > 0) {
+          firebaseHandler.updateStat(conversationId,
+            'hunger', users[conversationId].hunger - 1);
+        }
+        if (users[conversationId].happiness > 0) {
+          firebaseHandler.updateStat(conversationId,
+            'happiness', users[conversationId].happiness - 1);
+        }
+        if (users[conversationId].hygiene > 0) {
+          firebaseHandler.updateStat(conversationId,
+            'hygiene', users[conversationId].hygiene - 1);
+        }
+      }
+    }
+  });
+}
+
+setupScheduler();
 
 module.exports = router;
