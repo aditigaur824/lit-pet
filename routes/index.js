@@ -21,11 +21,12 @@ const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
 const {createCanvas, loadImage} = require('canvas');
+const { firebase } = require('googleapis/build/src/apis/firebase');
 
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
 const COMMAND_FEED_PET = 'feed';
-const COMMAND_FOOD_ITEM = 'food-';
+const COMMAND_FOOD_ITEM = 'food';
 const COMMAND_PLAY_WITH_PET = 'play';
 const COMMAND_CLEAN_PET = 'clean';
 const COMMAND_HELP = 'help';
@@ -149,12 +150,15 @@ async function routeMessage(message, conversationId) {
       }, conversationId);
     }
   } else if (command === COMMAND_FEED_PET) {
-    feedPet(conversationId);
+    sendFoodOptions(conversationId);
   } else if (command === COMMAND_PLAY_WITH_PET) {
     const game = words[1];
     playWithPet(game, conversationId);
   } else if (command === COMMAND_CLEAN_PET) {
     cleanPet(conversationId);
+  } else if (command === COMMAND_FOOD_ITEM) {
+    const food = words[1]
+    feedPet(food, conversationId);
   } else if (command === COMMAND_HELP) {
     // send error message
     sendResponse({
@@ -178,10 +182,10 @@ async function routeMessage(message, conversationId) {
 
 
 /**
- * feedPet - Feed pet
+ * sendFoodOptions - Send food options.
  * @param  {string} conversationId The conversation ID
  */
-async function feedPet(conversationId) {
+async function sendFoodOptions(conversationId) {
   sendResponse({
     messageId: uuid.v4(),
     representative: {
@@ -190,6 +194,47 @@ async function feedPet(conversationId) {
     suggestions: getFoodSuggestions(),
     text: 'Choose one of the foods below to feed your pet!',
   }, conversationId);
+}
+
+/**
+ * feedPet - Feed pet with food.
+ * @param {string} food 
+ * @param {string} conversationId 
+ */
+async function feedPet(food, conversationId) {
+  if (food === 'avocado') {
+    await firebaseHandler.updateStat('hunger', 50);
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      suggestions: getDefaultSuggestions(),
+      text: 'Great! Your pet is feeling a lot healthier!',
+    }, conversationId);
+  } else if (food === 'pizza') {
+    await firebaseHandler.updateStat('hunger', 40);
+    await firebaseHandler.updateStat('happiness', 50);
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      suggestions: getDefaultSuggestions(),
+      text: 'Great! Your pet is feeling a lot happier! Make sure to watch the junk food, though!',
+    }, conversationId);
+  } else {
+    await firebaseHandler.updateStat('hunger', 45);
+    await firebaseHandler.updateStat('happiness', 45);
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      suggestions: getDefaultSuggestions(),
+      text: 'Great choice! Your pet is feeling a lot happier and healthier!',
+    }, conversationId);
+  }
 }
 
 /**
@@ -295,19 +340,19 @@ function getFoodSuggestions() {
     {
       reply: {
         text: 'U+1F951',
-        postbackData: COMMAND_FOOD_ITEM+'avocado',
+        postbackData: COMMAND_FOOD_ITEM+' avocado',
       },
     },
     {
       reply: {
         text: '	U+1F355',
-        postbackData: COMMAND_FOOD_ITEM+'pizza',
+        postbackData: COMMAND_FOOD_ITEM+' pizza',
       },
     },
     {
       reply: {
         text: '	U+1F363',
-        postbackData: COMMAND_FOOD_ITEM+'sushi',
+        postbackData: COMMAND_FOOD_ITEM+' sushi',
       },
     },
   ];
