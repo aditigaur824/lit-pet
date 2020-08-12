@@ -157,7 +157,7 @@ async function routeMessage(req, message, conversationId) {
     cleanPet(conversationId);
   } else if (command === COMMAND_SET) {
     if(words.length === 3) {
-      firebaseHandler.updateStat(conversationId, words[1], isNaN(words[2]) ? (words[2] === 'null' ? null : words[2]) : parseInt(words[2]));
+      firebaseHandler.updateStat(conversationId, words[1], isNaN(words[2]) ? (words[2] === 'null' ? null : message.trim().split(' ')[2]) : parseInt(words[2]));
       sendResponse({
         messageId: uuid.v4(),
         representative: {
