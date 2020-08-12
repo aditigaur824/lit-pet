@@ -109,6 +109,7 @@ router.post('/callback', function(req, res, next) {
 /**
  * Routes the message received from the user to create a response.
  *
+ * @param {object} req The HTTP request.
  * @param {string} message The message text received from the user.
  * @param {string} conversationId The unique id for this user and agent.
  */
