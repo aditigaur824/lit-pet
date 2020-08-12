@@ -1,18 +1,10 @@
 {
-  "panda": {
-    "image": "https://i2.wp.com/www.megupets.com/wp-content/uploads/2020/05/new-thumbnail-2.jpg?resize=1536%2C768&ssl=1",
-    "name": "Panda"
-  },
   "chicken": {
-    "image": "https://i2.wp.com/www.megupets.com/wp-content/uploads/2020/05/alreveh-thumb.jpg?resize=1536%2C768&ssl=1",
+    "image": "https://i0.wp.com/www.megupets.com/wp-content/uploads/2020/04/pokpok-thumbnail.jpg?resize=1536%2C768&ssl=1",
     "name": "Chicken"
   },
   "sensei": {
     "image": "https://i1.wp.com/www.megupets.com/wp-content/uploads/2020/04/Sinino.jpg?resize=1200%2C600&ssl=1",
     "name": "Sensei"
-  },
-  "firechicken": {
-    "image": "https://i0.wp.com/www.megupets.com/wp-content/uploads/2020/04/pokpok-thumbnail.jpg?resize=1536%2C768&ssl=1",
-    "name": "Fire Chicken"
   }
 }
