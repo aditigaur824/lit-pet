@@ -29,32 +29,34 @@ const COMMAND_FEED_PET = 'feed';
 const COMMAND_FOOD_ITEM = 'food';
 const COMMAND_PLAY_WITH_PET = 'play';
 const COMMAND_CLEAN_PET = 'clean';
+const COMMAND_SET = 'set';
 const COMMAND_HELP = 'help';
 
 /**
  * Image generator public endpoint
  */
+router.get('/hello', function(req, res, next) {
+    res.redirect(generateImageUrl(req, null));
+});
 router.get('/image.png', function(req, res, next) {
-  const width = 708;
-  const height = 512;
-
   // Extract Parameters
-  const roomArg = req.query.room || 'datacenter';
+  const roomArg = req.query.room || 'bedroom';
   const speciesArg = req.query.species || 'pokpok';
   const colorArg = req.query.color || 'blue';
   const stateArg = req.query.state || 'normal';
-  const poopArg = req.query.poop || false;
+  const poopArg = req.query.poop || 'false';
 
-  const canvas = createCanvas(width, height);
-  const context = canvas.getContext('2d');
+  
   (async () => {
     try {
       // Draw Room
       const room = await loadImage(path.join(__dirname, '../assets/rooms/' + roomArg + '.jpg'));
+      const canvas = createCanvas(room.width, room.height);
+      const context = canvas.getContext('2d');
       context.drawImage(room, 0, 0);
 
       // Draw Poop
-      if (poopArg) {
+      if (poopArg == 'true') {
         const poop = await loadImage(path.join(__dirname, '../assets/poop.png'));
         const left = canvas.width / 2 - poop.width / 2 - 75;
         const top = canvas.height - poop.height - 5;
@@ -96,11 +98,11 @@ router.post('/callback', function(req, res, next) {
     && requestBody.message.text !== undefined) {
     let message = requestBody.message.text;
 
-    routeMessage(message, conversationId);
+    routeMessage(req, message, conversationId);
   } else if (requestBody.suggestionResponse !== undefined) {
     let message = requestBody.suggestionResponse.postbackData;
 
-    routeMessage(message, conversationId);
+    routeMessage(req, message, conversationId);
   }
 
   res.sendStatus(200);
@@ -109,19 +111,20 @@ router.post('/callback', function(req, res, next) {
 /**
  * Routes the message received from the user to create a response.
  *
+ * @param {object} req The HTTP request.
  * @param {string} message The message text received from the user.
  * @param {string} conversationId The unique id for this user and agent.
  */
-async function routeMessage(message, conversationId) {
+async function routeMessage(req, message, conversationId) {
   let normalizedMessage = message.trim().toLowerCase();
 
   console.log('normalizedMessage: ' + normalizedMessage);
   const words = normalizedMessage.split(' ');
   const command = words[0];
+  const user = await firebaseHandler.getUser(conversationId);
 
   // check for start message
   if (command === COMMAND_START) {
-    const user = await firebaseHandler.getUser(conversationId);
     // console.log('user', user);
     if (!user) {
       sendUserSelection(conversationId);
@@ -132,11 +135,10 @@ async function routeMessage(message, conversationId) {
         representative: {
           representativeType: 'BOT',
         },
-        text: `You have already adopted a ${user.petType}!`,
+        text: `You have already adopted a ${user.species}!`,
       }, conversationId);
     }
   } else if (command === COMMAND_CHOOSE_PET) {
-    const user = await firebaseHandler.getUser(conversationId);
     // check if user is choosing a pet
     if (!user) {
       setUserPet(normalizedMessage, conversationId);
@@ -146,19 +148,36 @@ async function routeMessage(message, conversationId) {
         representative: {
           representativeType: 'BOT',
         },
-        text: `You have already adopted a ${user.petType}!`,
+        text: `You have already adopted a ${user.species}!`,
       }, conversationId);
     }
   } else if (command === COMMAND_FEED_PET) {
-    sendFoodOptions(conversationId);
+    const food = words[1];
+    feedPet(req, user, conversationId, food);
   } else if (command === COMMAND_PLAY_WITH_PET) {
     const game = words[1];
-    playWithPet(game, conversationId);
+    playWithPet(req, user, game, conversationId);
   } else if (command === COMMAND_CLEAN_PET) {
-    cleanPet(conversationId);
-  } else if (command === COMMAND_FOOD_ITEM) {
-    const food = words[1]
-    feedPet(food, conversationId);
+    cleanPet(req, user, conversationId);
+  } else if (command === COMMAND_SET) {
+    if(words.length === 3) {
+      firebaseHandler.updateStat(conversationId, words[1], parseInt(words[2]));
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `${words[1]} set to ${words[2]}`,
+      }, conversationId);
+    } else {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: 'Command not recognized. Usage:\nset hunger 100',
+      }, conversationId);
+    }
   } else if (command === COMMAND_HELP) {
     // send error message
     sendResponse({
@@ -180,93 +199,143 @@ async function routeMessage(message, conversationId) {
   }
 }
 
-
+const FOOD = ['🍗', '🍔', '🍕', '🌮', '🥪', '🍣', '🥝', '🍓', '🍖'];
 /**
- * sendFoodOptions - Send food options.
- * @param  {string} conversationId The conversation ID
+ * feedPet - Feed pet
+ *
+ * @param  {object} req The HTTP request.
+ * @param  {object} user The user data.
+ * @param  {string} conversationId The conversation ID.
+ * @param  {string} food The food type.
  */
-async function sendFoodOptions(conversationId) {
-  sendResponse({
-    messageId: uuid.v4(),
-    representative: {
-      representativeType: 'BOT',
-    },
-    suggestions: getFoodSuggestions(),
-    text: 'Choose one of the foods below to feed your pet!',
-  }, conversationId);
-}
-
-/**
- * feedPet - Feed pet with food.
- * @param {string} food 
- * @param {string} conversationId 
- */
-async function feedPet(food, conversationId) {
-  if (food === 'avocado') {
-    await firebaseHandler.updateStat('hunger', 50);
-    sendResponse({
-      messageId: uuid.v4(),
-      representative: {
-        representativeType: 'BOT',
-      },
-      suggestions: getDefaultSuggestions(),
-      text: 'Great! Your pet is feeling a lot healthier!',
-    }, conversationId);
-  } else if (food === 'pizza') {
-    await firebaseHandler.updateStat('hunger', 40);
-    await firebaseHandler.updateStat('happiness', 50);
-    sendResponse({
-      messageId: uuid.v4(),
-      representative: {
-        representativeType: 'BOT',
-      },
-      suggestions: getDefaultSuggestions(),
-      text: 'Great! Your pet is feeling a lot happier! Make sure to watch the junk food, though!',
-    }, conversationId);
+async function feedPet(req, user, conversationId, food) {
+  if(food) {
+    if(FOOD.indexOf(food) === -1) {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `You don't have any ${food}!`,
+      }, conversationId);
+    } else {
+      if(user.hunger >= 100) {
+        sendStatusCard(req, user, conversationId, `${user.name} is too bloated to eat!`);
+      } else {
+        let val = randomInt(5) + 1;
+        firebaseHandler.updateStat(conversationId,'hunger', user.hunger + val);
+        sendStatusCard(req, user, conversationId, `${food} | You feed your pet! (+${val} food)`);
+      }
+    }
   } else {
-    await firebaseHandler.updateStat('hunger', 45);
-    await firebaseHandler.updateStat('happiness', 45);
+    // Generate 3 random foods
+    console.log('Generate foods');
+    let foods = [];
+    while(foods.length < 3){
+      var f = randomInt(FOOD.length);
+      console.log(`Generated ${FOOD[f]}`);
+      if(foods.indexOf(FOOD[f]) === -1) foods.push(FOOD[f]);
+    }
     sendResponse({
       messageId: uuid.v4(),
       representative: {
         representativeType: 'BOT',
       },
-      suggestions: getDefaultSuggestions(),
-      text: 'Great choice! Your pet is feeling a lot happier and healthier!',
+      text: 'What do you want to feed your pet?',
+      suggestions: [
+        {
+          'reply': {
+            'text': foods[0],
+            'postbackData': `${COMMAND_FEED_PET} ${foods[0]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': foods[1],
+            'postbackData': `${COMMAND_FEED_PET} ${foods[1]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': foods[2],
+            'postbackData': `${COMMAND_FEED_PET} ${foods[2]}`,
+          },
+        },
+      ],
     }, conversationId);
   }
 }
 
+const GAMES = ['⚾', '🥏', '🏓', '🧩','🎱', '⛳', '🏐', '🏈', '♟️'];
 /**
  * playWithPet - Play game with pet
  * @param  {string} game The game type
  * @param  {string} conversationId The conversation ID
  */
-async function playWithPet(game, conversationId) {
-  // TODO: Implement game
-  sendResponse({
-    messageId: uuid.v4(),
-    representative: {
-      representativeType: 'BOT',
-    },
-    text: 'Play with pet not implemented yet',
-  }, conversationId);
+async function playWithPet(req, user, game, conversationId) {
+  if(game) {
+    if(GAMES.indexOf(game) === -1) {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `Your pet doesn't know how to play ${game}!`,
+      }, conversationId);
+    } else {
+      let val = randomInt(5) + 1;
+      firebaseHandler.updateStat(conversationId,'happiness', user.happiness + val);
+      sendStatusCard(req, user, conversationId, `${game} | You played with your pet! (+${val} happiness)`);
+    }
+  } else {
+    // Generate 3 random games
+    console.log('Generate games');
+    let games = [];
+    while(games.length < 3){
+      var f = randomInt(GAMES.length);
+      console.log(`Generated ${GAMES[f]}`);
+      if(games.indexOf(GAMES[f]) === -1) games.push(GAMES[f]);
+    }
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      text: 'What do you want to play with your pet?',
+      suggestions: [
+        {
+          'reply': {
+            'text': games[0],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[0]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': games[1],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[1]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': games[2],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[2]}`,
+          },
+        },
+      ],
+    }, conversationId);
+  }
 }
 
 
 /**
  * cleanPet - Clean pet
+ * @param  {object} req The HTTP request.
+ * @param  {object} user The user data.
  * @param  {type} conversationId The conversation ID
  */
-async function cleanPet(conversationId) {
-  // TODO: Implement clean
-  sendResponse({
-    messageId: uuid.v4(),
-    representative: {
-      representativeType: 'BOT',
-    },
-    text: 'Clean pet not implemented yet',
-  }, conversationId);
+async function cleanPet(req, user, conversationId) {
+  firebaseHandler.updateStat(conversationId,'hygiene', 100);
+  sendStatusCard(req, user, conversationId, `Great job! You cleaned your pet!`);
 }
 
 
@@ -289,6 +358,84 @@ async function setUserPet(normalizedMessage, conversationId) {
     suggestions: getDefaultSuggestions(),
     text: `You have succesfully adopted a ${petType}!`,
   }, conversationId);
+}
+
+/**
+ * Returns a random integer from 0 (inclusive) to n (exclusive).
+ *
+ * @param {number} n
+ */
+function randomInt(n) {
+  return Math.floor(Math.random() * n);
+}
+
+/**
+ * Generate an image representing the state of the room.
+ *
+ * @param {object} req The HTTP request.
+ * @param {object} pet The user data.
+ */
+function generateImageUrl(req, pet) {
+    pet = pet || {};
+    const room = pet.room || 'bedroom';
+    const species = pet.species || 'pokpok';
+    const color = pet.color || 'blue';
+    const poop = pet.hygiene < 80;
+    
+    let state = 'normal';
+    
+    if(pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+      state = 'happy';
+    } else if(pet.hunger < 50) {
+      state = 'hungry';
+    } else if(pet.hygiene < 50) {
+      state = 'angry';
+    } else if(pet.happiness < 50) {
+      state = 'bored';
+    }
+    
+    return url = req.protocol + '://' + req.get('host') + '/image.png?'
+      + 'room=' + room
+      + '&species=' + species
+      + '&color=' + color
+      + '&state=' + state
+      + '&poop=' + poop
+    ;
+}
+
+/**
+ * Sends a standalone card with status of the pet.
+ *
+ * @param {object} req The HTTP request.
+ * @param {object} user The user data.
+ * @param {string} conversationId The unique id for this user and agent.
+ * @param {string} message The text that goes in the status card.
+ */
+function sendStatusCard(req, user, conversationId, message) {
+  let statusCard = {
+      'cardContent':{
+        description: message,
+        suggestions: getDefaultSuggestions(),
+        media: {
+          height: 'TALL',
+          contentInfo: {
+            fileUrl: generateImageUrl(req, user),
+            forceRefresh: false,
+          },
+        },
+      }
+  };
+
+  sendResponse({
+        messageId: uuid.v4(),
+        fallback: message,
+        representative: {
+          representativeType: 'BOT',
+        },
+        richCard: {
+          standaloneCard: statusCard,
+        },
+      }, conversationId);
 }
 
 /**
@@ -330,29 +477,6 @@ function getDefaultSuggestions() {
       reply: {
         text: 'Play With Your Pet!',
         postbackData: COMMAND_PLAY_WITH_PET,
-      },
-    },
-  ];
-}
-
-function getFoodSuggestions() {
-  return [
-    {
-      reply: {
-        text: 'U+1F951',
-        postbackData: COMMAND_FOOD_ITEM+' avocado',
-      },
-    },
-    {
-      reply: {
-        text: '	U+1F355',
-        postbackData: COMMAND_FOOD_ITEM+' pizza',
-      },
-    },
-    {
-      reply: {
-        text: '	U+1F363',
-        postbackData: COMMAND_FOOD_ITEM+' sushi',
       },
     },
   ];
@@ -438,8 +562,8 @@ function sendResponse(messageObject, conversationId) {
     // Send the typing started event
     apiObject.bmApi.conversations.events.create(apiEventParams, {},
       (err, response) => {
-      // console.error(err);
-      // console.log(response);
+      console.error(err);
+      console.log(response);
 
       let apiParams = {
         auth: apiObject.authClient,
@@ -451,8 +575,8 @@ function sendResponse(messageObject, conversationId) {
       // Business Messages client library
       apiObject.bmApi.conversations.messages.create(apiParams, {},
         (err, response) => {
-        // console.log(err);
-        // console.log(response);
+        console.log(err);
+        console.log(response);
 
         // Update the event parameters
         apiEventParams.resource.eventType = 'TYPING_STOPPED';
@@ -461,13 +585,13 @@ function sendResponse(messageObject, conversationId) {
         // Send the typing stopped event
         apiObject.bmApi.conversations.events.create(apiEventParams, {},
           (err, response) => {
-          // console.log(err);
-          // console.log(response);
+          console.log(err);
+          console.log(response);
         });
       });
     });
   }).catch(function(err) {
-    // console.log(err);
+    console.log(err);
   });
 }
 
