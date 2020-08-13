@@ -43,7 +43,7 @@ router.get('/image.png', function(req, res, next) {
   const colorArg = req.query.color || 'default';
   const stateArg = req.query.state || 'normal';
   const poopArg = req.query.poop || 'false';
-
+  const runawayArg = req.query.runaway || 'false';
 
   (async () => {
     try {
@@ -60,22 +60,16 @@ router.get('/image.png', function(req, res, next) {
         const top = canvas.height - poop.height - 5;
         context.drawImage(poop, left, top);
       }
-
-      if (stateArg != 'ran_away') {
+      if (runawayArg == 'false') {
         // Draw Pet
         const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
         const left = canvas.width / 2 - pet.width / 2 - (roomArg === 'spotlight' ? 5 : 0);
         const top = canvas.height - pet.height - (roomArg === 'spotlight' ? 85 : 5);
         context.drawImage(pet, left, top);
-
-        // Set MIME and pipe to response
-        res.setHeader('Content-Type', 'image/png');
-        canvas.createPNGStream().pipe(res);
-      } else {
-        // Set MIME and pipe to response
-        res.setHeader('Content-Type', 'image/png');
-        canvas.createPNGStream().pipe(res);
       }
+      // Set MIME and pipe to response
+      res.setHeader('Content-Type', 'image/png');
+      canvas.createPNGStream().pipe(res);
     } catch (err) {
       res.status(404).send({
         message: err,
@@ -253,7 +247,7 @@ async function feedPet(req, user, conversationId, food) {
       } else {
         let val = randomInt(10) + 5;
         firebaseHandler.updateStat(conversationId, 'hunger', user.hunger + val);
-        sendStatusCard(req, user, conversationId, `${food} | You feed your pet! (+${val} food)`);
+        sendStatusCard(req, user, conversationId, `${food} | You fed ${user.name}! (+${val} food)`);
       }
     }
   } else {
@@ -270,7 +264,7 @@ async function feedPet(req, user, conversationId, food) {
       representative: {
         representativeType: 'BOT',
       },
-      text: 'What do you want to feed your pet?',
+      text: `What do you want to feed ${user.name}?`,
       suggestions: [
         {
           'reply': {
@@ -309,12 +303,12 @@ async function playWithPet(req, user, game, conversationId) {
         representative: {
           representativeType: 'BOT',
         },
-        text: `Your pet doesn't know how to play ${game}!`,
+        text: `${user.name} doesn't know how to play ${game}!`,
       }, conversationId);
     } else {
-      let val = randomInt(5) + 1;
+      let val = randomInt(10) + 1;
       firebaseHandler.updateStat(conversationId, 'happiness', user.happiness + val);
-      sendStatusCard(req, user, conversationId, `${game} | You played with your pet! (+${val} happiness)`);
+      sendStatusCard(req, user, conversationId, `${game} | You played with ${user.name}! (+${val} happiness)`);
     }
   } else {
     // Generate 3 random games
@@ -330,7 +324,7 @@ async function playWithPet(req, user, game, conversationId) {
       representative: {
         representativeType: 'BOT',
       },
-      text: 'What do you want to play with your pet?',
+      text: `What do you want to play with ${user.name}?`,
       suggestions: [
         {
           'reply': {
@@ -364,7 +358,7 @@ async function playWithPet(req, user, game, conversationId) {
  */
 async function cleanPet(req, user, conversationId) {
   await firebaseHandler.updateStat(conversationId, 'hygiene', 100);
-  sendStatusCard(req, user, conversationId, `Great job! You cleaned your pet!`);
+  sendStatusCard(req, user, conversationId, `Great job! You cleaned ${user.name}!`);
 }
 
 
@@ -411,9 +405,7 @@ function randomInt(n) {
  * @param {object} pet The user data.
  */
 function getState(pet) {
-    if (ranAway(pet)) {
-      return 'ran_away';
-    } else if (pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+    if (pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
       return 'happy';
     } else if (pet.hunger < 50) {
       return 'hungry';
@@ -438,6 +430,7 @@ function generateImageUrl(req, pet) {
     const color = pet.color || (species === 'chicken' ? 'blue' : 'default');
     const poop = pet.hygiene < 80;
     const state = getState(pet);
+    const runaway = ranAway(pet);
 
     return url = req.protocol + '://' + req.get('host') + '/image.png?'
       + 'room=' + room
@@ -445,6 +438,7 @@ function generateImageUrl(req, pet) {
       + '&color=' + color
       + '&state=' + state
       + '&poop=' + poop
+      + '&runaway=' + runaway
     ;
 }
 
@@ -514,19 +508,19 @@ function getDefaultSuggestions() {
   return [
     {
       reply: {
-        text: 'Feed Your Pet!',
+        text: 'Feed!',
         postbackData: COMMAND_FEED_PET,
       },
     },
     {
       reply: {
-        text: 'Clean Your Pet!',
+        text: 'Clean!',
         postbackData: COMMAND_CLEAN_PET,
       },
     },
     {
       reply: {
-        text: 'Play With Your Pet!',
+        text: 'Play!',
         postbackData: COMMAND_PLAY_WITH_PET,
       },
     },
