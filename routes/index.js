@@ -60,17 +60,22 @@ router.get('/image.png', function(req, res, next) {
         const top = canvas.height - poop.height - 5;
         context.drawImage(poop, left, top);
       }
-      if (!stateArg === 'ran_away') {
+
+      if (stateArg != 'ran_away') {
         // Draw Pet
         const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
         const left = canvas.width / 2 - pet.width / 2 - (roomArg === 'spotlight' ? 5 : 0);
         const top = canvas.height - pet.height - (roomArg === 'spotlight' ? 85 : 5);
         context.drawImage(pet, left, top);
-      }
 
-      // Set MIME and pipe to response
-      res.setHeader('Content-Type', 'image/png');
-      canvas.createPNGStream().pipe(res);
+        // Set MIME and pipe to response
+        res.setHeader('Content-Type', 'image/png');
+        canvas.createPNGStream().pipe(res);
+      } else {
+        // Set MIME and pipe to response
+        res.setHeader('Content-Type', 'image/png');
+        canvas.createPNGStream().pipe(res);
+      }
     } catch (err) {
       res.status(404).send({
         message: err,
@@ -133,6 +138,7 @@ async function routeMessage(req, message, conversationId) {
       representative: {
         representativeType: 'BOT',
       },
+      suggestions: getDefaultSuggestions(),
       text: `You've adopted ${message}. Take care of your new pet!`,
     }, conversationId);
   } else if (command === COMMAND_CHOOSE_PET) {
@@ -163,7 +169,7 @@ async function routeMessage(req, message, conversationId) {
       }, conversationId);
     }
   } else if (ranAway(user)) {
-    sendStatusCard(req, user, conversationId, 'Oh no! Your pet ran away');
+    sendStatusCard(req, user, conversationId, `Oh no! You neglected ${user.name} and it ran away!`);
   } else if (command === COMMAND_FEED_PET) {
     const food = words[1];
     feedPet(req, user, conversationId, food);
@@ -245,7 +251,7 @@ async function feedPet(req, user, conversationId, food) {
       if (user.hunger >= 100) {
         sendStatusCard(req, user, conversationId, `${user.name} is too bloated to eat!`);
       } else {
-        let val = randomInt(5) + 1;
+        let val = randomInt(10) + 5;
         firebaseHandler.updateStat(conversationId, 'hunger', user.hunger + val);
         sendStatusCard(req, user, conversationId, `${food} | You feed your pet! (+${val} food)`);
       }
@@ -386,7 +392,6 @@ async function setUserPet(normalizedMessage, conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    suggestions: getDefaultSuggestions(),
     text: `You have succesfully adopted a ${petType}! What do you want to call it?`,
   }, conversationId);
 }
@@ -452,16 +457,10 @@ function generateImageUrl(req, pet) {
  * @param {string} message The text that goes in the status card.
  */
 function sendStatusCard(req, user, conversationId, message) {
-  let suggestions;
-  if (user.ran_away) {
-    suggestions = getAdoptSuggestions();
-  } else {
-    suggestions = getDefaultSuggestions();
-  }
   let statusCard = {
       'cardContent': {
         description: message,
-        suggestions: suggestions,
+        suggestions: user.ran_away ? getAdoptSuggestions() : getDefaultSuggestions(),
         media: {
           height: 'TALL',
           contentInfo: {
@@ -542,7 +541,7 @@ function getAdoptSuggestions() {
   return [
     {
       reply: {
-        text: 'I\'m sorry :( I\'ll do better next time. Adopt a new pet.',
+        text: 'Adopt a new pet :(',
         postbackData: COMMAND_START,
       },
     },
