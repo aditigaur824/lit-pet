@@ -29,20 +29,19 @@ const COMMAND_FEED_PET = 'feed';
 const COMMAND_FOOD_ITEM = 'food';
 const COMMAND_PLAY_WITH_PET = 'play';
 const COMMAND_CLEAN_PET = 'clean';
+const COMMAND_STATUS = 'status';
+const COMMAND_CREDITS = 'credits';
 const COMMAND_SET = 'set';
 const COMMAND_HELP = 'help';
 
 /**
  * Image generator public endpoint
  */
-router.get('/hello', function(req, res, next) {
-    res.redirect(generateImageUrl(req, null));
-});
 router.get('/image.png', function(req, res, next) {
   // Extract Parameters
   const roomArg = req.query.room || 'bedroom';
-  const speciesArg = req.query.species || 'pokpok';
-  const colorArg = req.query.color || 'blue';
+  const speciesArg = req.query.species || 'sensei';
+  const colorArg = req.query.color || 'default';
   const stateArg = req.query.state || 'normal';
   const poopArg = req.query.poop || 'false';
 
@@ -65,8 +64,8 @@ router.get('/image.png', function(req, res, next) {
 
       // Draw Pet
       const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
-      const left = canvas.width / 2 - pet.width / 2;
-      const top = canvas.height - pet.height - 5;
+      const left = canvas.width / 2 - pet.width / 2 - (roomArg === 'spotlight' ? 5 : 0);
+      const top = canvas.height - pet.height - (roomArg === 'spotlight' ? 85 : 5);
       context.drawImage(pet, left, top);
 
       // Set MIME and pipe to response
@@ -123,12 +122,10 @@ async function routeMessage(req, message, conversationId) {
   const command = words[0];
   const user = await firebaseHandler.getUser(conversationId);
 
-  // check for start message
-  if (command === COMMAND_START) {
-    // console.log('user', user);
-    if (!user) {
-      sendUserSelection(conversationId);
-      sendCarousel(conversationId);
+  if (command === COMMAND_CHOOSE_PET) {
+    // check if user is choosing a pet
+    if (!user || !user.species) {
+      setUserPet(normalizedMessage, conversationId);
     } else {
       sendResponse({
         messageId: uuid.v4(),
@@ -138,10 +135,11 @@ async function routeMessage(req, message, conversationId) {
         text: `You have already adopted a ${user.species}!`,
       }, conversationId);
     }
-  } else if (command === COMMAND_CHOOSE_PET) {
-    // check if user is choosing a pet
-    if (!user) {
-      setUserPet(normalizedMessage, conversationId);
+  } else if (command === COMMAND_START || !user || !user.species) {
+    // console.log('user', user);
+    if (!user || !user.species) {
+      sendUserSelection(conversationId);
+      sendCarousel(req, conversationId);
     } else {
       sendResponse({
         messageId: uuid.v4(),
@@ -161,7 +159,7 @@ async function routeMessage(req, message, conversationId) {
     cleanPet(req, user, conversationId);
   } else if (command === COMMAND_SET) {
     if(words.length === 3) {
-      firebaseHandler.updateStat(conversationId, words[1], parseInt(words[2]));
+      firebaseHandler.updateStat(conversationId, words[1], isNaN(words[2]) ? (words[2] === 'null' ? null : message.trim().split(' ')[2]) : parseInt(words[2]));
       sendResponse({
         messageId: uuid.v4(),
         representative: {
@@ -175,9 +173,19 @@ async function routeMessage(req, message, conversationId) {
         representative: {
           representativeType: 'BOT',
         },
-        text: 'Command not recognized. Usage:\nset hunger 100',
+        text: 'Command not recognized. Usage:\nset <property> <value>',
       }, conversationId);
     }
+  } else if (command === COMMAND_STATUS) {
+      sendStatusCard(req, user, conversationId, `${user.name} seems ${getState(user)}!`);
+  } else if (command === COMMAND_CREDITS) {
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      text: 'Pet Images by Megupets\nhttps://www.megupets.com/\n\nBackground Images by upklyak\nhttps://www.freepik.com/upklyak',
+    }, conversationId);
   } else if (command === COMMAND_HELP) {
     // send error message
     sendResponse({
@@ -185,7 +193,7 @@ async function routeMessage(req, message, conversationId) {
       representative: {
         representativeType: 'BOT',
       },
-      text: 'List of commands:\nfeed <food>\nplay <game>\nclean',
+      text: 'List of commands:\nfeed\nplay\nclean\nstatus\ncredits',
     }, conversationId);
   } else {
     // send error message
@@ -350,6 +358,14 @@ async function setUserPet(normalizedMessage, conversationId) {
   let petType = normalizedMessage.split(' ')[1];
   // save in firebase + send response
   await firebaseHandler.setPetType(petType, conversationId);
+  if(petType === 'chicken') {
+    let colors = ['blue', 'white', 'yellow'];
+    firebaseHandler.updateStat(conversationId,
+            'color', colors[randomInt(3)]);
+  } else {
+    firebaseHandler.updateStat(conversationId,
+            'color', 'default');
+  }
   sendResponse({
     messageId: uuid.v4(),
     representative: {
@@ -370,6 +386,24 @@ function randomInt(n) {
 }
 
 /**
+ * Get the state of a pet.
+ *
+ * @param {object} pet The user data.
+ */
+function getState(pet) {
+    if(pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+      return 'happy';
+    } else if(pet.hunger < 50) {
+      return 'hungry';
+    } else if(pet.hygiene < 50) {
+      return 'angry';
+    } else if(pet.happiness < 50) {
+      return 'bored';
+    }
+    return 'normal';
+}
+
+/**
  * Generate an image representing the state of the room.
  *
  * @param {object} req The HTTP request.
@@ -378,21 +412,10 @@ function randomInt(n) {
 function generateImageUrl(req, pet) {
     pet = pet || {};
     const room = pet.room || 'bedroom';
-    const species = pet.species || 'pokpok';
-    const color = pet.color || 'blue';
+    const species = pet.species || 'sensei';
+    const color = pet.color || (species === 'chicken' ? 'blue' : 'default');
     const poop = pet.hygiene < 80;
-    
-    let state = 'normal';
-    
-    if(pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
-      state = 'happy';
-    } else if(pet.hunger < 50) {
-      state = 'hungry';
-    } else if(pet.hygiene < 50) {
-      state = 'angry';
-    } else if(pet.happiness < 50) {
-      state = 'bored';
-    }
+    const state = getState(pet);
     
     return url = req.protocol + '://' + req.get('host') + '/image.png?'
       + 'room=' + room
@@ -441,10 +464,11 @@ function sendStatusCard(req, user, conversationId, message) {
 /**
  * Sends a pets rich card to the user.
  *
+ * @param {object} req The HTTP request.
  * @param {string} conversationId The unique id for this user and agent.
  */
-function sendCarousel(conversationId) {
-  let carouselCard = getPetCarousel();
+function sendCarousel(req, conversationId) {
+  let carouselCard = getPetCarousel(req);
   let fallbackText = 'Pet List';
 
   sendResponse({
@@ -485,9 +509,11 @@ function getDefaultSuggestions() {
 /**
  * Creates a pet carousel
  *
+ * @param {object} req The HTTP request.
+ *
  * @return {object} A carousel rich card.
  */
-function getPetCarousel() {
+function getPetCarousel(req) {
   let cardContents = [];
 
   // Create individual cards for the carousel
@@ -506,7 +532,7 @@ function getPetCarousel() {
         media: {
           height: 'MEDIUM',
           contentInfo: {
-            fileUrl: pet.image,
+            fileUrl: generateImageUrl(req, {'species': petKey, 'room': 'spotlight'}),
             forceRefresh: false,
           },
         },
