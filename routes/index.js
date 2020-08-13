@@ -452,10 +452,16 @@ function generateImageUrl(req, pet) {
  * @param {string} message The text that goes in the status card.
  */
 function sendStatusCard(req, user, conversationId, message) {
+  let suggestions;
+  if (user.ran_away) {
+    suggestions = getAdoptSuggestions();
+  } else {
+    suggestions = getDefaultSuggestions();
+  }
   let statusCard = {
       'cardContent': {
         description: message,
-        suggestions: getDefaultSuggestions(),
+        suggestions: suggestions,
         media: {
           height: 'TALL',
           contentInfo: {
@@ -523,6 +529,21 @@ function getDefaultSuggestions() {
       reply: {
         text: 'Play With Your Pet!',
         postbackData: COMMAND_PLAY_WITH_PET,
+      },
+    },
+  ];
+}
+
+/**
+ * getDefaultSuggestions
+ * @return {array} Default suggestions array
+ */
+function getAdoptSuggestions() {
+  return [
+    {
+      reply: {
+        text: 'I\'m sorry :( I\'ll do better next time. Adopt a new pet.',
+        postbackData: COMMAND_START,
       },
     },
   ];
