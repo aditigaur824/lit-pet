@@ -21,10 +21,12 @@ const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
 const {createCanvas, loadImage} = require('canvas');
+const { firebase } = require('googleapis/build/src/apis/firebase');
 
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
 const COMMAND_FEED_PET = 'feed';
+const COMMAND_FOOD_ITEM = 'food';
 const COMMAND_PLAY_WITH_PET = 'play';
 const COMMAND_CLEAN_PET = 'clean';
 const COMMAND_STATUS = 'status';
@@ -152,9 +154,9 @@ async function routeMessage(req, message, conversationId) {
     feedPet(req, user, conversationId, food);
   } else if (command === COMMAND_PLAY_WITH_PET) {
     const game = words[1];
-    playWithPet(game, conversationId);
+    playWithPet(req, user, game, conversationId);
   } else if (command === COMMAND_CLEAN_PET) {
-    cleanPet(conversationId);
+    cleanPet(req, user, conversationId);
   } else if (command === COMMAND_SET) {
     if(words.length === 3) {
       firebaseHandler.updateStat(conversationId, words[1], isNaN(words[2]) ? (words[2] === 'null' ? null : message.trim().split(' ')[2]) : parseInt(words[2]));
@@ -272,36 +274,76 @@ async function feedPet(req, user, conversationId, food) {
   }
 }
 
+const GAMES = ['⚾', '🥏', '🏓', '🧩','🎱', '⛳', '🏐', '🏈', '♟️'];
 /**
  * playWithPet - Play game with pet
  * @param  {string} game The game type
  * @param  {string} conversationId The conversation ID
  */
-async function playWithPet(game, conversationId) {
-  // TODO: Implement game
-  sendResponse({
-    messageId: uuid.v4(),
-    representative: {
-      representativeType: 'BOT',
-    },
-    text: 'Play with pet not implemented yet',
-  }, conversationId);
+async function playWithPet(req, user, game, conversationId) {
+  if(game) {
+    if(GAMES.indexOf(game) === -1) {
+      sendResponse({
+        messageId: uuid.v4(),
+        representative: {
+          representativeType: 'BOT',
+        },
+        text: `Your pet doesn't know how to play ${game}!`,
+      }, conversationId);
+    } else {
+      let val = randomInt(5) + 1;
+      firebaseHandler.updateStat(conversationId,'happiness', user.happiness + val);
+      sendStatusCard(req, user, conversationId, `${game} | You played with your pet! (+${val} happiness)`);
+    }
+  } else {
+    // Generate 3 random games
+    console.log('Generate games');
+    let games = [];
+    while(games.length < 3){
+      var f = randomInt(GAMES.length);
+      console.log(`Generated ${GAMES[f]}`);
+      if(games.indexOf(GAMES[f]) === -1) games.push(GAMES[f]);
+    }
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      text: 'What do you want to play with your pet?',
+      suggestions: [
+        {
+          'reply': {
+            'text': games[0],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[0]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': games[1],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[1]}`,
+          },
+        },
+        {
+          'reply': {
+            'text': games[2],
+            'postbackData': `${COMMAND_PLAY_WITH_PET} ${games[2]}`,
+          },
+        },
+      ],
+    }, conversationId);
+  }
 }
 
 
 /**
  * cleanPet - Clean pet
+ * @param  {object} req The HTTP request.
+ * @param  {object} user The user data.
  * @param  {type} conversationId The conversation ID
  */
-async function cleanPet(conversationId) {
-  // TODO: Implement clean
-  sendResponse({
-    messageId: uuid.v4(),
-    representative: {
-      representativeType: 'BOT',
-    },
-    text: 'Clean pet not implemented yet',
-  }, conversationId);
+async function cleanPet(req, user, conversationId) {
+  firebaseHandler.updateStat(conversationId,'hygiene', 100);
+  sendStatusCard(req, user, conversationId, `Great job! You cleaned your pet!`);
 }
 
 
@@ -329,7 +371,8 @@ async function setUserPet(normalizedMessage, conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    text: `You have successfully adopted a ${petType}!`,
+    suggestions: getDefaultSuggestions(),
+    text: `You have succesfully adopted a ${petType}!`,
   }, conversationId);
 }
 
@@ -395,6 +438,7 @@ function sendStatusCard(req, user, conversationId, message) {
   let statusCard = {
       'cardContent':{
         description: message,
+        suggestions: getDefaultSuggestions(),
         media: {
           height: 'TALL',
           contentInfo: {
@@ -437,6 +481,29 @@ function sendCarousel(req, conversationId) {
           carouselCard: carouselCard,
         },
       }, conversationId);
+}
+
+function getDefaultSuggestions() {
+  return [
+    {
+      reply: {
+        text: 'Feed Your Pet!',
+        postbackData: COMMAND_FEED_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Clean Your Pet!',
+        postbackData: COMMAND_CLEAN_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Play With Your Pet!',
+        postbackData: COMMAND_PLAY_WITH_PET,
+      },
+    },
+  ];
 }
 
 /**
