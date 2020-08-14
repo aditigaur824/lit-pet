@@ -387,7 +387,7 @@ async function setUserPet(normalizedMessage, conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    text: `You have succesfully adopted a ${petType}! What do you want to call it?`,
+    text: `You have successfully adopted a ${petType}! What do you want to call it?`,
   }, conversationId);
 }
 
@@ -412,9 +412,10 @@ function getState(pet) {
       return 'hungry';
     } else if (pet.hygiene < 50 || pet.happiness < 20) {
       return 'angry';
-    } else if (pet.happiness < 60) {
+    } else if (pet.happiness < 50) {
       return 'bored';
     }
+    return 'normal';
 }
 
 /**
@@ -435,7 +436,7 @@ function getWrittenState(pet) {
     }
     if (pet.happiness < 20) {
       status.push('angry');
-    } else if (pet.happiness < 60) {
+    } else if (pet.happiness < 50) {
       status.push('bored');
     }
 
@@ -542,19 +543,19 @@ function getDefaultSuggestions() {
   return [
     {
       reply: {
-        text: 'Feed!',
+        text: '🥕 | Feed!',
         postbackData: COMMAND_FEED_PET,
       },
     },
     {
       reply: {
-        text: 'Clean!',
+        text: '✨ | Clean!',
         postbackData: COMMAND_CLEAN_PET,
       },
     },
     {
       reply: {
-        text: 'Play!',
+        text: '🏈 | Play!',
         postbackData: COMMAND_PLAY_WITH_PET,
       },
     },
@@ -632,7 +633,7 @@ function sendUserSelection(conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    text: 'It looks like you haven\'t registered before! Please choose a pet :)',
+    text: 'Please choose a pet :)',
   };
   sendResponse(messageObject, conversationId);
 }
@@ -705,7 +706,7 @@ function ranAway(user) {
  * setupScheduler - Set schedulers to deplete H+H+H and check for pet runaway
  */
 async function setupScheduler() {
-  schedule.scheduleJob('0 * * *', async () => {
+  schedule.scheduleJob('*/5 * * * * *', async () => {
     let users = await firebaseHandler.getUserList();
     for (let conversationId in users) {
       if (users.hasOwnProperty(conversationId)) {
@@ -720,6 +721,31 @@ async function setupScheduler() {
         if (users[conversationId].hygiene > 0) {
           firebaseHandler.updateStat(conversationId,
             'hygiene', users[conversationId].hygiene - 5);
+        }
+        let state = getWrittenState(users[conversationId]);
+        let lastSent = users[conversationId].lastSent;
+        if (lastSent !== undefined && ranAway(users[conversationId]) && lastSent !== 'ran_away') {
+          firebaseHandler.updateStat(conversationId,
+            'ran_away', true);
+          firebaseHandler.updateStat(conversationId,
+            'lastSent', 'ran_away');
+          sendResponse({
+            messageId: uuid.v4(),
+            representative: {
+              representativeType: 'BOT',
+            },
+            text: `${users[conversationId].name} ran away!`,
+          }, conversationId);
+        } else if (lastSent !== undefined && lastSent !== state && state !== 'normal') {
+          firebaseHandler.updateStat(conversationId,
+            'lastSent', state);
+          sendResponse({
+            messageId: uuid.v4(),
+            representative: {
+              representativeType: 'BOT',
+            },
+            text: `${users[conversationId].name} is ${state}!`,
+          }, conversationId);
         }
       }
     }
