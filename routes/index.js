@@ -21,7 +21,6 @@ const firebaseHandler = require('../lib/firebase_helper');
 const apiHelper = require('../lib/api_helper');
 const pets = require('../resources/pets.json');
 const {createCanvas, loadImage} = require('canvas');
-const { firebase } = require('googleapis/build/src/apis/firebase');
 
 const COMMAND_START = 'start';
 const COMMAND_CHOOSE_PET = 'choosepet';
@@ -44,8 +43,8 @@ router.get('/image.png', function(req, res, next) {
   const colorArg = req.query.color || 'default';
   const stateArg = req.query.state || 'normal';
   const poopArg = req.query.poop || 'false';
+  const runawayArg = req.query.runaway || 'false';
 
-  
   (async () => {
     try {
       // Draw Room
@@ -61,13 +60,13 @@ router.get('/image.png', function(req, res, next) {
         const top = canvas.height - poop.height - 5;
         context.drawImage(poop, left, top);
       }
-
-      // Draw Pet
-      const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
-      const left = canvas.width / 2 - pet.width / 2 - (roomArg === 'spotlight' ? 5 : 0);
-      const top = canvas.height - pet.height - (roomArg === 'spotlight' ? 85 : 5);
-      context.drawImage(pet, left, top);
-
+      if (runawayArg == 'false') {
+        // Draw Pet
+        const pet = await loadImage(path.join(__dirname, '../assets/pets/' + speciesArg + '/' + colorArg + '/' + stateArg + '.png'));
+        const left = canvas.width / 2 - pet.width / 2 - (roomArg === 'spotlight' ? 5 : 0);
+        const top = canvas.height - pet.height - (roomArg === 'spotlight' ? 85 : 5);
+        context.drawImage(pet, left, top);
+      }
       // Set MIME and pipe to response
       res.setHeader('Content-Type', 'image/png');
       canvas.createPNGStream().pipe(res);
@@ -120,11 +119,25 @@ async function routeMessage(req, message, conversationId) {
   console.log('normalizedMessage: ' + normalizedMessage);
   const words = normalizedMessage.split(' ');
   const command = words[0];
-  const user = await firebaseHandler.getUser(conversationId);
+  let user = await firebaseHandler.getUser(conversationId);
+  if (ranAway(user)) {
+    await firebaseHandler.updateStat(conversationId, 'ran_away', true);
+  }
+  user = await firebaseHandler.getUser(conversationId);
 
-  if (command === COMMAND_CHOOSE_PET) {
+  if (user.species !== '' && user.name === '') {
+    await firebaseHandler.updateStat(conversationId, 'name', message);
+    sendResponse({
+      messageId: uuid.v4(),
+      representative: {
+        representativeType: 'BOT',
+      },
+      suggestions: getDefaultSuggestions(),
+      text: `You've adopted ${message}. Take care of your new pet!`,
+    }, conversationId);
+  } else if (command === COMMAND_CHOOSE_PET) {
     // check if user is choosing a pet
-    if (!user || !user.species) {
+    if (!user || !user.species || user.ran_away) {
       setUserPet(normalizedMessage, conversationId);
     } else {
       sendResponse({
@@ -137,7 +150,7 @@ async function routeMessage(req, message, conversationId) {
     }
   } else if (command === COMMAND_START || !user || !user.species) {
     // console.log('user', user);
-    if (!user || !user.species) {
+    if (!user || !user.species || user.ran_away) {
       sendUserSelection(conversationId);
       sendCarousel(req, conversationId);
     } else {
@@ -149,6 +162,8 @@ async function routeMessage(req, message, conversationId) {
         text: `You have already adopted a ${user.species}!`,
       }, conversationId);
     }
+  } else if (ranAway(user)) {
+    sendStatusCard(req, user, conversationId, `Oh no! You neglected ${user.name} and it ran away!`);
   } else if (command === COMMAND_FEED_PET) {
     const food = words[1];
     feedPet(req, user, conversationId, food);
@@ -158,7 +173,7 @@ async function routeMessage(req, message, conversationId) {
   } else if (command === COMMAND_CLEAN_PET) {
     cleanPet(req, user, conversationId);
   } else if (command === COMMAND_SET) {
-    if(words.length === 3) {
+    if (words.length === 3) {
       firebaseHandler.updateStat(conversationId, words[1], isNaN(words[2]) ? (words[2] === 'null' ? null : message.trim().split(' ')[2]) : parseInt(words[2]));
       sendResponse({
         messageId: uuid.v4(),
@@ -177,7 +192,7 @@ async function routeMessage(req, message, conversationId) {
       }, conversationId);
     }
   } else if (command === COMMAND_STATUS) {
-      sendStatusCard(req, user, conversationId, `${user.name} seems ${getState(user)}!`);
+    sendStatusCard(req, user, conversationId, `${user.name} seems ${getWrittenState(user)}!`);
   } else if (command === COMMAND_CREDITS) {
     sendResponse({
       messageId: uuid.v4(),
@@ -217,8 +232,8 @@ const FOOD = ['🍗', '🍔', '🍕', '🌮', '🥪', '🍣', '🥝', '🍓', '�
  * @param  {string} food The food type.
  */
 async function feedPet(req, user, conversationId, food) {
-  if(food) {
-    if(FOOD.indexOf(food) === -1) {
+  if (food) {
+    if (FOOD.indexOf(food) === -1) {
       sendResponse({
         messageId: uuid.v4(),
         representative: {
@@ -227,29 +242,29 @@ async function feedPet(req, user, conversationId, food) {
         text: `You don't have any ${food}!`,
       }, conversationId);
     } else {
-      if(user.hunger >= 100) {
+      if (user.hunger >= 100) {
         sendStatusCard(req, user, conversationId, `${user.name} is too bloated to eat!`);
       } else {
-        let val = randomInt(5) + 1;
-        firebaseHandler.updateStat(conversationId,'hunger', user.hunger + val);
-        sendStatusCard(req, user, conversationId, `${food} | You feed your pet! (+${val} food)`);
+        let val = randomInt(10) + 5;
+        firebaseHandler.updateStat(conversationId, 'hunger', user.hunger + val);
+        sendStatusCard(req, user, conversationId, `${food} | You fed ${user.name}! (+${val} food)`);
       }
     }
   } else {
     // Generate 3 random foods
     console.log('Generate foods');
     let foods = [];
-    while(foods.length < 3){
-      var f = randomInt(FOOD.length);
+    while (foods.length < 3) {
+      let f = randomInt(FOOD.length);
       console.log(`Generated ${FOOD[f]}`);
-      if(foods.indexOf(FOOD[f]) === -1) foods.push(FOOD[f]);
+      if (foods.indexOf(FOOD[f]) === -1) foods.push(FOOD[f]);
     }
     sendResponse({
       messageId: uuid.v4(),
       representative: {
         representativeType: 'BOT',
       },
-      text: 'What do you want to feed your pet?',
+      text: `What do you want to feed ${user.name}?`,
       suggestions: [
         {
           'reply': {
@@ -274,42 +289,42 @@ async function feedPet(req, user, conversationId, food) {
   }
 }
 
-const GAMES = ['⚾', '🥏', '🏓', '🧩','🎱', '⛳', '🏐', '🏈', '♟️'];
+const GAMES = ['⚾', '🥏', '🏓', '🧩', '🎱', '⛳', '🏐', '🏈', '♟️'];
 /**
  * playWithPet - Play game with pet
  * @param  {string} game The game type
  * @param  {string} conversationId The conversation ID
  */
 async function playWithPet(req, user, game, conversationId) {
-  if(game) {
-    if(GAMES.indexOf(game) === -1) {
+  if (game) {
+    if (GAMES.indexOf(game) === -1) {
       sendResponse({
         messageId: uuid.v4(),
         representative: {
           representativeType: 'BOT',
         },
-        text: `Your pet doesn't know how to play ${game}!`,
+        text: `${user.name} doesn't know how to play ${game}!`,
       }, conversationId);
     } else {
-      let val = randomInt(5) + 1;
-      firebaseHandler.updateStat(conversationId,'happiness', user.happiness + val);
-      sendStatusCard(req, user, conversationId, `${game} | You played with your pet! (+${val} happiness)`);
+      let val = randomInt(15) + 5;
+      firebaseHandler.updateStat(conversationId, 'happiness', user.happiness + val);
+      sendStatusCard(req, user, conversationId, `${game} | You played with ${user.name}! (+${val} happiness)`);
     }
   } else {
     // Generate 3 random games
     console.log('Generate games');
     let games = [];
-    while(games.length < 3){
-      var f = randomInt(GAMES.length);
+    while (games.length < 3) {
+      let f = randomInt(GAMES.length);
       console.log(`Generated ${GAMES[f]}`);
-      if(games.indexOf(GAMES[f]) === -1) games.push(GAMES[f]);
+      if (games.indexOf(GAMES[f]) === -1) games.push(GAMES[f]);
     }
     sendResponse({
       messageId: uuid.v4(),
       representative: {
         representativeType: 'BOT',
       },
-      text: 'What do you want to play with your pet?',
+      text: `What do you want to play with ${user.name}?`,
       suggestions: [
         {
           'reply': {
@@ -342,8 +357,9 @@ async function playWithPet(req, user, game, conversationId) {
  * @param  {type} conversationId The conversation ID
  */
 async function cleanPet(req, user, conversationId) {
-  firebaseHandler.updateStat(conversationId,'hygiene', 100);
-  sendStatusCard(req, user, conversationId, `Great job! You cleaned your pet!`);
+  await firebaseHandler.updateStat(conversationId, 'hygiene', 100);
+  user.hygiene = 100;
+  sendStatusCard(req, user, conversationId, `Great job! You cleaned ${user.name}!`);
 }
 
 
@@ -358,7 +374,7 @@ async function setUserPet(normalizedMessage, conversationId) {
   let petType = normalizedMessage.split(' ')[1];
   // save in firebase + send response
   await firebaseHandler.setPetType(petType, conversationId);
-  if(petType === 'chicken') {
+  if (petType === 'chicken') {
     let colors = ['blue', 'white', 'yellow'];
     firebaseHandler.updateStat(conversationId,
             'color', colors[randomInt(3)]);
@@ -371,8 +387,7 @@ async function setUserPet(normalizedMessage, conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    suggestions: getDefaultSuggestions(),
-    text: `You have succesfully adopted a ${petType}!`,
+    text: `You have successfully adopted a ${petType}! What do you want to call it?`,
   }, conversationId);
 }
 
@@ -391,16 +406,50 @@ function randomInt(n) {
  * @param {object} pet The user data.
  */
 function getState(pet) {
-    if(pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+    if (pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
       return 'happy';
-    } else if(pet.hunger < 50) {
+    } else if (pet.hunger < 50) {
       return 'hungry';
-    } else if(pet.hygiene < 50) {
+    } else if (pet.hygiene < 50 || pet.happiness < 20) {
       return 'angry';
-    } else if(pet.happiness < 50) {
+    } else if (pet.happiness < 50) {
       return 'bored';
     }
     return 'normal';
+}
+
+/**
+ * Get the state of a pet.
+ *
+ * @param {object} pet The user data.
+ */
+function getWrittenState(pet) {
+    let status = [];
+    if (pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+      return 'happy';
+    }
+    if (pet.hunger < 50) {
+      status.push('hungry');
+    }
+    if (pet.hygiene < 50) {
+      status.push('dirty');
+    }
+    if (pet.happiness < 20) {
+      status.push('angry');
+    } else if (pet.happiness < 50) {
+      status.push('bored');
+    }
+
+    console.log('STATUS', status);
+    if (status.length === 0) {
+      return 'normal';
+    } else if (status.length == 1) {
+      return status[0];
+    } else if (status.length == 2) {
+      return status[0] + ' and ' + status[1];
+    } else {
+      return status[0] + ', ' + status[1] + ', and ' + status[2];
+    }
 }
 
 /**
@@ -414,15 +463,17 @@ function generateImageUrl(req, pet) {
     const room = pet.room || 'bedroom';
     const species = pet.species || 'sensei';
     const color = pet.color || (species === 'chicken' ? 'blue' : 'default');
-    const poop = pet.hygiene < 80;
+    const poop = pet.hygiene < 50;
     const state = getState(pet);
-    
+    const runaway = ranAway(pet);
+
     return url = req.protocol + '://' + req.get('host') + '/image.png?'
       + 'room=' + room
       + '&species=' + species
       + '&color=' + color
       + '&state=' + state
       + '&poop=' + poop
+      + '&runaway=' + runaway
     ;
 }
 
@@ -436,9 +487,9 @@ function generateImageUrl(req, pet) {
  */
 function sendStatusCard(req, user, conversationId, message) {
   let statusCard = {
-      'cardContent':{
+      'cardContent': {
         description: message,
-        suggestions: getDefaultSuggestions(),
+        suggestions: user.ran_away ? getAdoptSuggestions() : getDefaultSuggestions(),
         media: {
           height: 'TALL',
           contentInfo: {
@@ -446,7 +497,7 @@ function sendStatusCard(req, user, conversationId, message) {
             forceRefresh: false,
           },
         },
-      }
+      },
   };
 
   sendResponse({
@@ -483,24 +534,50 @@ function sendCarousel(req, conversationId) {
       }, conversationId);
 }
 
+
+/**
+ * getDefaultSuggestions
+ * @return {array} Default suggestions array
+ */
 function getDefaultSuggestions() {
   return [
     {
       reply: {
-        text: 'Feed Your Pet!',
+        text: '🥕 | Feed!',
         postbackData: COMMAND_FEED_PET,
       },
     },
     {
       reply: {
-        text: 'Clean Your Pet!',
+        text: '✨ | Clean!',
         postbackData: COMMAND_CLEAN_PET,
       },
     },
     {
       reply: {
-        text: 'Play With Your Pet!',
+        text: '🏈 | Play!',
         postbackData: COMMAND_PLAY_WITH_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Status',
+        postbackData: COMMAND_STATUS,
+      },
+    },
+  ];
+}
+
+/**
+ * getDefaultSuggestions
+ * @return {array} Default suggestions array
+ */
+function getAdoptSuggestions() {
+  return [
+    {
+      reply: {
+        text: 'Adopt a new pet :(',
+        postbackData: COMMAND_START,
       },
     },
   ];
@@ -556,7 +633,7 @@ function sendUserSelection(conversationId) {
     representative: {
       representativeType: 'BOT',
     },
-    text: 'It looks like you haven\'t registered before! Please choose a pet :)',
+    text: 'Please choose a pet :)',
   };
   sendResponse(messageObject, conversationId);
 }
@@ -621,26 +698,54 @@ function sendResponse(messageObject, conversationId) {
   });
 }
 
+function ranAway(user) {
+  return user.happiness === 0 || user.hunger === 0;
+}
 
 /**
- * setupScheduler - Set schedulers to deplete H+H+H
+ * setupScheduler - Set schedulers to deplete H+H+H and check for pet runaway
  */
 async function setupScheduler() {
-  schedule.scheduleJob('30 * * * * *', async () => {
+  schedule.scheduleJob('*/5 * * * * *', async () => {
     let users = await firebaseHandler.getUserList();
     for (let conversationId in users) {
       if (users.hasOwnProperty(conversationId)) {
         if (users[conversationId].hunger > 0) {
           firebaseHandler.updateStat(conversationId,
-            'hunger', users[conversationId].hunger - 1);
+            'hunger', users[conversationId].hunger - 5);
         }
         if (users[conversationId].happiness > 0) {
           firebaseHandler.updateStat(conversationId,
-            'happiness', users[conversationId].happiness - 1);
+            'happiness', users[conversationId].happiness - 5);
         }
         if (users[conversationId].hygiene > 0) {
           firebaseHandler.updateStat(conversationId,
-            'hygiene', users[conversationId].hygiene - 1);
+            'hygiene', users[conversationId].hygiene - 5);
+        }
+        let state = getWrittenState(users[conversationId]);
+        let lastSent = users[conversationId].lastSent;
+        if (lastSent !== undefined && ranAway(users[conversationId]) && lastSent !== 'ran_away') {
+          firebaseHandler.updateStat(conversationId,
+            'ran_away', true);
+          firebaseHandler.updateStat(conversationId,
+            'lastSent', 'ran_away');
+          sendResponse({
+            messageId: uuid.v4(),
+            representative: {
+              representativeType: 'BOT',
+            },
+            text: `${users[conversationId].name} ran away!`,
+          }, conversationId);
+        } else if (lastSent !== undefined && lastSent !== state && state !== 'normal') {
+          firebaseHandler.updateStat(conversationId,
+            'lastSent', state);
+          sendResponse({
+            messageId: uuid.v4(),
+            representative: {
+              representativeType: 'BOT',
+            },
+            text: `${users[conversationId].name} is ${state}!`,
+          }, conversationId);
         }
       }
     }
