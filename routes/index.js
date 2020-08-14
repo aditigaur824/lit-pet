@@ -192,7 +192,7 @@ async function routeMessage(req, message, conversationId) {
       }, conversationId);
     }
   } else if (command === COMMAND_STATUS) {
-    sendStatusCard(req, user, conversationId, `${user.name} seems ${getState(user)}!`);
+    sendStatusCard(req, user, conversationId, `${user.name} seems ${getWrittenState(user)}!`);
   } else if (command === COMMAND_CREDITS) {
     sendResponse({
       messageId: uuid.v4(),
@@ -306,7 +306,7 @@ async function playWithPet(req, user, game, conversationId) {
         text: `${user.name} doesn't know how to play ${game}!`,
       }, conversationId);
     } else {
-      let val = randomInt(10) + 1;
+      let val = randomInt(15) + 5;
       firebaseHandler.updateStat(conversationId, 'happiness', user.happiness + val);
       sendStatusCard(req, user, conversationId, `${game} | You played with ${user.name}! (+${val} happiness)`);
     }
@@ -358,6 +358,7 @@ async function playWithPet(req, user, game, conversationId) {
  */
 async function cleanPet(req, user, conversationId) {
   await firebaseHandler.updateStat(conversationId, 'hygiene', 100);
+  user.hygiene = 100;
   sendStatusCard(req, user, conversationId, `Great job! You cleaned ${user.name}!`);
 }
 
@@ -409,12 +410,45 @@ function getState(pet) {
       return 'happy';
     } else if (pet.hunger < 50) {
       return 'hungry';
-    } else if (pet.hygiene < 50) {
+    } else if (pet.hygiene < 50 || pet.happiness < 20) {
       return 'angry';
-    } else if (pet.happiness < 50) {
+    } else if (pet.happiness < 60) {
       return 'bored';
     }
-    return 'normal';
+}
+
+/**
+ * Get the state of a pet.
+ *
+ * @param {object} pet The user data.
+ */
+function getWrittenState(pet) {
+    let status = [];
+    if (pet.hunger >= 80 && pet.hygiene >= 80 && pet.happiness > 80) {
+      return 'happy';
+    }
+    if (pet.hunger < 50) {
+      status.push('hungry');
+    }
+    if (pet.hygiene < 50) {
+      status.push('dirty');
+    }
+    if (pet.happiness < 20) {
+      status.push('angry');
+    } else if (pet.happiness < 60) {
+      status.push('bored');
+    }
+
+    console.log('STATUS', status);
+    if (status.length === 0) {
+      return 'normal';
+    } else if (status.length == 1) {
+      return status[0];
+    } else if (status.length == 2) {
+      return status[0] + ' and ' + status[1];
+    } else {
+      return status[0] + ', ' + status[1] + ', and ' + status[2];
+    }
 }
 
 /**
@@ -428,7 +462,7 @@ function generateImageUrl(req, pet) {
     const room = pet.room || 'bedroom';
     const species = pet.species || 'sensei';
     const color = pet.color || (species === 'chicken' ? 'blue' : 'default');
-    const poop = pet.hygiene < 80;
+    const poop = pet.hygiene < 50;
     const state = getState(pet);
     const runaway = ranAway(pet);
 
@@ -522,6 +556,12 @@ function getDefaultSuggestions() {
       reply: {
         text: 'Play!',
         postbackData: COMMAND_PLAY_WITH_PET,
+      },
+    },
+    {
+      reply: {
+        text: 'Status',
+        postbackData: COMMAND_STATUS,
       },
     },
   ];
